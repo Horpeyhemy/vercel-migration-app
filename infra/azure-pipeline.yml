@@ -8,7 +8,7 @@ variables:
     value: 'dev'
 
   # Your variable group containing DATABASE_URL secret
-  - group: 'Terraform-Dev'
+  - group: 'vercel-migration-secrets'
 
   - name: workingdir
     value: '$(System.DefaultWorkingDirectory)/infra' 

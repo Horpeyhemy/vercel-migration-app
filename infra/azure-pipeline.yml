@@ -54,8 +54,8 @@ stages:
           terraform plan -var "database_url=$(DATABASE_URL)" -out=tfplan -input=false
         workingDirectory: '$(workingdir)'
 
-    # Publish plan artifact
-    - publish: tfplan
+    # Publish tfplan as artifact
+    - publish: $(workingdir)/tfplan
       artifact: terraform-plan
 
 - stage: Apply
@@ -104,6 +104,6 @@ stages:
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
-                cp $(Pipeline.Workspace)/terraform-plan/tfplan .
-                terraform apply tfplan -input=false
-              workingDirectory: '$(workingdir)'
+                 cd $(workingdir)
+                  cp $(Pipeline.Workspace)/terraform-plan/tfplan .
+                  terraform apply tfplan

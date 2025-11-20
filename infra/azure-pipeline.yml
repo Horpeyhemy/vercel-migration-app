@@ -1,12 +1,25 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
 variables:
-- group: vercel-migration-secrets
+- group: vercel-migration-secrets  # your variable group with DATABASE_URL
 
 steps:
+# Install Terraform
+- task: TerraformInstaller@1
+  inputs:
+    terraformVersion: '1.7.7'
+
+# Initialize Terraform
 - task: TerraformCLI@1
   inputs:
     command: 'init'
     workingDirectory: 'infra'
 
+# Plan Terraform
 - task: TerraformCLI@1
   inputs:
     command: 'plan'
@@ -14,6 +27,7 @@ steps:
     vars: |
       database_url=$(DATABASE_URL)
 
+# Apply Terraform
 - task: TerraformCLI@1
   inputs:
     command: 'apply'

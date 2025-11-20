@@ -9,7 +9,7 @@ variable "resource_group_name" {
 variable "location" {
   description = "Azure location for all resources"
   type        = string
-  default     = "East US"
+  default     = "Canada Central"
 }
 
 # App Service Plan name

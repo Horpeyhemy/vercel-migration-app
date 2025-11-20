@@ -1,7 +1,7 @@
 # Resource Group
 resource "azurerm_resource_group" "rg" {
   name     = "vercel-migration-rg"
-  location = "East US"
+  location = "Canada Central"
 }
 
 # Virtual Network
@@ -25,6 +25,7 @@ resource "azurerm_service_plan" "plan" {
   name                = "vercel-migration-plan"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name  
+  os_type             = "Linux"
   sku_name            = "F1"
 }
 

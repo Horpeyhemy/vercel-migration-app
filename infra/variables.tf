@@ -1,34 +1,47 @@
+# Resource group name
 variable "resource_group_name" {
-  type    = string
-  default = "vercel-migration-rg"
+  description = "Name of the Azure Resource Group"
+  type        = string
+  default     = "vercel-migration-rg"
 }
 
+# Location for resources
 variable "location" {
-  type    = string
-  default = "East US"
+  description = "Azure location for all resources"
+  type        = string
+  default     = "East US"
 }
 
+# App Service Plan name
 variable "app_service_plan_name" {
-  type    = string
-  default = "vercel-migration-plan"
+  description = "Name of the Azure App Service Plan"
+  type        = string
+  default     = "vercel-migration-plan"
 }
 
+# Web App name
 variable "web_app_name" {
-  type    = string
-  default = "vercel-migration-app"
+  description = "Name of the Azure Web App"
+  type        = string
+  default     = "vercel-migration-app"
 }
 
+# Virtual Network and Subnet
 variable "vnet_name" {
-  type    = string
-  default = "vercel-migration-vnet"
+  description = "Name of the Virtual Network"
+  type        = string
+  default     = "vercel-migration-vnet"
 }
 
 variable "subnet_name" {
-  type    = string
-  default = "vercel-migration-subnet"
+  description = "Name of the Subnet"
+  type        = string
+  default     = "app-subnet"
 }
 
+# Database URL (from Azure DevOps variable group)
 variable "database_url" {
+  description = "Connection string for Vercel Postgres"
   type        = string
-  description = "Vercel Postgres database URL"
+  sensitive   = true
 }

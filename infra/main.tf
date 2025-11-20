@@ -18,22 +18,20 @@ resource "azurerm_subnet" "subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
-} 
-# App Service Plan
+}
+
+# Service Plan (Linux)
 resource "azurerm_service_plan" "plan" {
   name                = "vercel-migration-plan"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   kind                = "Linux"
   reserved            = true
-
-  sku {
-    tier = "Basic"
-    size = "B1"
-  }
+  os_type             = "Linux"
+  sku_name            = "B1"
 }
 
-# Web App
+# Linux Web App
 resource "azurerm_linux_web_app" "app" {
   name                = "vercel-migration-app"
   resource_group_name = azurerm_resource_group.rg.name
@@ -41,15 +39,14 @@ resource "azurerm_linux_web_app" "app" {
   service_plan_id     = azurerm_service_plan.plan.id
 
   site_config {
-    linux_fx_version = "NODE|20-lts"
-    always_on        = true
-    # VNet integration
+    linux_fx_version       = "NODE|20-lts"
+    always_on              = true
     vnet_route_all_enabled = true
     subnet_id              = azurerm_subnet.subnet.id
   }
 
   app_settings = {
-    # DATABASE_URL will be injected from Azure DevOps pipeline
+    # DATABASE_URL will be injected from Azure DevOps variable group
     "WEBSITES_PORT" = "3000"
   }
 }

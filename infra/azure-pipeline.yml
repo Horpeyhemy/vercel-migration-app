@@ -1,0 +1,23 @@
+variables:
+- group: vercel-migration-secrets
+
+steps:
+- task: TerraformCLI@1
+  inputs:
+    command: 'init'
+    workingDirectory: 'infra'
+
+- task: TerraformCLI@1
+  inputs:
+    command: 'plan'
+    workingDirectory: 'infra'
+    vars: |
+      database_url=$(DATABASE_URL)
+
+- task: TerraformCLI@1
+  inputs:
+    command: 'apply'
+    workingDirectory: 'infra'
+    vars: |
+      database_url=$(DATABASE_URL)
+    autoApprove: true

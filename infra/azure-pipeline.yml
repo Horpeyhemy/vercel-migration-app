@@ -1,52 +1,42 @@
-
-trigger:
+trigger: 
   branches:
     include:
       - main
+
 variables:
-  - name: environment
-    value: 'dev'
-
-  # Your variable group containing DATABASE_URL secret
-  - group: 'vercel-migration-secrets'
-
+  - group: 'vercel-migration-secrets'  # your variable group with DATABASE_URL
   - name: workingdir
     value: '$(System.DefaultWorkingDirectory)/infra'
+  - name: appdir
+    value: '$(System.DefaultWorkingDirectory)/app'  # your Next.js app folder
 
 stages:
-- stage: Plan
-  displayName: "Terraform Plan for ${{ variables.environment }}"
+- stage: Terraform
+  displayName: "Terraform Infrastructure"
   jobs:
-  - job: TerraformPlan
-    displayName: "Terraform Plan"
+  - job: DeployInfra
+    displayName: "Deploy Terraform Infra"
     steps:
-    - checkout: self
-
-    # Install Terraform
+    - checkout: self 
     - task: TerraformInstaller@1
       displayName: 'Install Terraform'
       inputs:
-        terraformVersion: '1.5.7'  # stable version for Azure DevOps
-
-    # Terraform Init with backend
+        terraformVersion: '1.5.7' 
     - task: AzureCLI@2
-      displayName: 'Initialize Terraform'
+      displayName: 'Terraform Init'
       inputs:
         azureSubscription: $(SERVICE_CONNECTION)
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
-          terraform init \
-            -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
-            -backend-config="container_name=$(TF_STATE_CONTAINER)" \
-            -backend-config="key=$(TF_STATE_KEY)" \
-            -backend-config="resource_group_name=$(TF_STATE_RG)" \
-            -input=false
-        workingDirectory: '$(workingdir)'
-
-    # Terraform Plan
+          terraform init -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+                         -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                         -backend-config="key=$(TF_STATE_KEY)" \
+                         -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                         -input=false
+        workingDirectory: '$(workingdir)' 
     - task: AzureCLI@2
-      displayName: 'Plan Terraform Deployment'
+      displayName: 'Terraform Plan'
       inputs:
         azureSubscription: $(SERVICE_CONNECTION)
         scriptType: 'bash'
@@ -55,56 +45,36 @@ stages:
           terraform plan -var "database_url=$(DATABASE_URL)" -out=tfplan -input=false
         workingDirectory: '$(workingdir)'
 
-    # Publish plan artifact
-    - publish: tfplan
-      artifact: terraform-plan
+    - task: AzureCLI@2
+      displayName: 'Terraform Apply'
+      inputs:
+        azureSubscription: $(SERVICE_CONNECTION)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          terraform apply tfplan -input=false
+        workingDirectory: '$(workingdir)'
 
-- stage: Apply
-  displayName: "Terraform Apply for ${{ variables.environment }}"
-  dependsOn: Plan
+- stage: AppDeploy
+  displayName: "Deploy Next.js App"
+  dependsOn: Terraform
   jobs:
-  - deployment: TerraformApply
-    displayName: "Terraform Apply"
-    environment: ${{ variables.environment }}
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - checkout: self
+  - job: DeployApp
+    displayName: "Deploy App to Azure"
+    steps:
+    - checkout: self
 
-          - download: current
-            artifact: terraform-plan
+    # Build Next.js app
+    - script: |
+        cd $(appdir)
+        npm install
+        npm run build
+      displayName: 'Build Next.js App'
 
-          # Install Terraform
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '1.5.7'
-
-          # Terraform Init
-          - task: AzureCLI@2
-            displayName: 'Initialize Terraform'
-            inputs:
-              azureSubscription: $(SERVICE_CONNECTION)
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              inlineScript: |
-                terraform init \
-                  -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
-                  -backend-config="container_name=$(TF_STATE_CONTAINER)" \
-                  -backend-config="key=$(TF_STATE_KEY)" \
-                  -backend-config="resource_group_name=$(TF_STATE_RG)" \
-                  -input=false
-              workingDirectory: '$(workingdir)'
-
-          # Terraform Apply
-          - task: AzureCLI@2
-            displayName: 'Apply Terraform Deployment'
-            inputs:
-              azureSubscription: $(SERVICE_CONNECTION)
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              inlineScript: |
-                cp $(Pipeline.Workspace)/terraform-plan/tfplan .
-                terraform apply tfplan -input=false
-              workingDirectory: '$(workingdir)'
+    # Deploy to Azure Web App
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: $(SERVICE_CONNECTION)
+        appName: 'vercel-migration-app'
+        package: '$(appdir)/.next'
+        appSettings: '-DATABASE_URL=$(DATABASE_URL)'

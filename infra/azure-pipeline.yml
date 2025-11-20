@@ -5,13 +5,13 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-- group: vercel-migration-secrets  # your DATABASE_URL variable
+- group: vercel-migration-secrets
 
 steps:
-# Install Terraform
+# Install Terraform (stable version)
 - task: TerraformInstaller@1
   inputs:
-    terraformVersion: '1.7.6'  # fixed version
+    terraformVersion: '1.5.7'
 
 # Initialize Terraform
 - task: TerraformCLI@1

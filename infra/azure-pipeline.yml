@@ -1,37 +1,110 @@
+
 trigger:
-- main
-
-pool:
-  vmImage: ubuntu-latest
-
+  branches:
+    include:
+      - main
 variables:
-- group: vercel-migration-secrets
+  - name: environment
+    value: 'dev'
 
-steps:
-# Install Terraform (stable version)
-- task: TerraformInstaller@1
-  inputs:
-    terraformVersion: '1.5.7'
+  # Your variable group containing DATABASE_URL secret
+  - group: 'vercel-migration-secrets'
 
-# Initialize Terraform
-- task: TerraformCLI@1
-  inputs:
-    command: 'init'
-    workingDirectory: 'infra'
+  - name: workingdir
+    value: '$(System.DefaultWorkingDirectory)/infra'
 
-# Plan Terraform
-- task: TerraformCLI@1
-  inputs:
-    command: 'plan'
-    workingDirectory: 'infra'
-    vars: |
-      database_url=$(DATABASE_URL)
+stages:
+- stage: Plan
+  displayName: "Terraform Plan for ${{ variables.environment }}"
+  jobs:
+  - job: TerraformPlan
+    displayName: "Terraform Plan"
+    steps:
+    - checkout: self
 
-# Apply Terraform
-- task: TerraformCLI@1
-  inputs:
-    command: 'apply'
-    workingDirectory: 'infra'
-    vars: |
-      database_url=$(DATABASE_URL)
-    autoApprove: true
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '1.5.7'  # stable version for Azure DevOps
+
+    # Terraform Init with backend
+    - task: AzureCLI@2
+      displayName: 'Initialize Terraform'
+      inputs:
+        azureSubscription: $(SERVICE_CONNECTION)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          terraform init \
+            -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+            -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+            -backend-config="key=$(TF_STATE_KEY)" \
+            -backend-config="resource_group_name=$(TF_STATE_RG)" \
+            -input=false
+        workingDirectory: '$(workingdir)'
+
+    # Terraform Plan
+    - task: AzureCLI@2
+      displayName: 'Plan Terraform Deployment'
+      inputs:
+        azureSubscription: $(SERVICE_CONNECTION)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          terraform plan -var "database_url=$(DATABASE_URL)" -out=tfplan -input=false
+        workingDirectory: '$(workingdir)'
+
+    # Publish plan artifact
+    - publish: tfplan
+      artifact: terraform-plan
+
+- stage: Apply
+  displayName: "Terraform Apply for ${{ variables.environment }}"
+  dependsOn: Plan
+  jobs:
+  - deployment: TerraformApply
+    displayName: "Terraform Apply"
+    environment: ${{ variables.environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+
+          - download: current
+            artifact: terraform-plan
+
+          # Install Terraform
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.5.7'
+
+          # Terraform Init
+          - task: AzureCLI@2
+            displayName: 'Initialize Terraform'
+            inputs:
+              azureSubscription: $(SERVICE_CONNECTION)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                terraform init \
+                  -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+                  -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                  -backend-config="key=$(TF_STATE_KEY)" \
+                  -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                  -input=false
+              workingDirectory: '$(workingdir)'
+
+          # Terraform Apply
+          - task: AzureCLI@2
+            displayName: 'Apply Terraform Deployment'
+            inputs:
+              azureSubscription: $(SERVICE_CONNECTION)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                cp $(Pipeline.Workspace)/terraform-plan/tfplan .
+                terraform apply tfplan -input=false
+              workingDirectory: '$(workingdir)'

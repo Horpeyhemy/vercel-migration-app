@@ -34,13 +34,8 @@ resource "azurerm_linux_web_app" "app" {
   name                = "vercel-migration-app"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  service_plan_id     = azurerm_service_plan.plan.id
-
-  site_config { 
-    always_on              = true
-    vnet_route_all_enabled = true 
-  }
-
+  service_plan_id     = azurerm_service_plan.plan.id 
+ 
   app_settings = {
     # DATABASE_URL will be injected from Azure DevOps variable group
     "WEBSITES_PORT" = "3000"
@@ -49,15 +44,7 @@ resource "azurerm_linux_web_app" "app" {
 
 # VNet Integration
 resource "azurerm_app_service_virtual_network_swift_connection" "vnet_integration" {
-  app_service_id = azurerm_linux_web_app.app.id
-  subnet_id      = azurerm_subnet.subnet.id
+  app_service_id = azurerm_linux_web_app.app.id 
 }
-
-# Application Insights
-resource "azurerm_application_insights" "ai" {
-  name                = "vercel-migration-ai"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  application_type    = "web"
-}
+ 
 

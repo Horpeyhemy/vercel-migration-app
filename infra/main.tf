@@ -51,7 +51,9 @@ resource "azurerm_linux_web_app" "app" {
 # VNet Integration
 resource "azurerm_app_service_virtual_network_swift_connection" "vnet_integration" {
   app_service_id = azurerm_linux_web_app.app.id
-  subnet_id      = azurerm_subnet.subnet.id}
+  subnet_id      = azurerm_subnet.subnet.id
+}
+
 # Application Insights
 resource "azurerm_application_insights" "ai" {
   name                = "vercel-migration-ai"

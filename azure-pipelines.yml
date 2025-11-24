@@ -1,0 +1,88 @@
+trigger:
+- main
+
+pool:
+  name: SelfHostedPool
+
+variables:
+  WEBSITES_PORT: "3000"
+
+stages:
+# --------------------------
+# BUILD STAGE
+# --------------------------
+- stage: Build
+  displayName: 'Build and Package App'
+  jobs:
+  - job: BuildJob
+    displayName: 'Install Dependencies & Build'
+    steps:
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        cd $(System.DefaultWorkingDirectory)
+        npm install
+        npm run build || echo "No build script found"
+      displayName: 'Install & Build'
+
+    # ---- ZIP ONLY THE APP FOLDER ----
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+        replaceExistingArchive: true
+      displayName: 'Zip application files'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+      displayName: 'Publish Artifact'
+
+
+# --------------------------
+# DEPLOYMENT STAGE
+# --------------------------
+- stage: Deploy
+  displayName: 'Deploy to Azure App Service'
+  dependsOn: Build
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy Web App'
+    environment: 'dev'
+    pool:
+      name: SelfHostedPool
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - download: current
+            artifact: drop
+
+          # ---- DEPLOY TO AZURE ----
+          - task: AzureWebApp@1
+            displayName: "Deploy to vercel-migration-app"
+            inputs:
+              azureSubscription: 'Opeyemi'
+              appType: 'webAppLinux'
+              appName: 'vercel-migration-app'
+              package: '$(Pipeline.Workspace)/drop/app.zip'
+              appSettings: |
+                [
+                  {
+                    "name": "DATABASE_URL",
+                    "value": "$(DATABASE_URL)"
+                  },
+                  {
+                    "name": "WEBSITES_PORT",
+                    "value": "3000"
+                  }
+                ]

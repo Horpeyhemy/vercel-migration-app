@@ -1,88 +1,89 @@
 trigger:
 - main
 
+# Use Microsoft-hosted agent (recommended)
 pool:
-  name: SelfHostedPool
-
-variables:
-  WEBSITES_PORT: "3000"
+  vmImage: 'ubuntu-latest'
 
 stages:
-# --------------------------
+# ============================================
 # BUILD STAGE
-# --------------------------
+# ============================================
 - stage: Build
-  displayName: 'Build and Package App'
+  displayName: "Build and Package App"
   jobs:
   - job: BuildJob
-    displayName: 'Install Dependencies & Build'
-    steps:
+    displayName: "Install, Build, Test"
+    pool:
+      vmImage: 'ubuntu-latest'
 
+    steps: 
     - task: NodeTool@0
       inputs:
-        versionSpec: '18.x'
-      displayName: 'Install Node.js'
+        versionSpec: '20.x'
+      displayName: "Install Node.js 20"
 
-    - script: |
-        cd $(System.DefaultWorkingDirectory)
+    - script: | 
         npm install
-        npm run build || echo "No build script found"
-      displayName: 'Install & Build'
+        npm run build
+      displayName: "Build Application"
 
-    # ---- ZIP ONLY THE APP FOLDER ----
-    - task: ArchiveFiles@2
+    - task: ArchiveFiles@2 
       inputs:
         rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
         includeRootFolder: false
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
         replaceExistingArchive: true
-      displayName: 'Zip application files'
+      displayName: "Zip Build Output"
 
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
-      displayName: 'Publish Artifact'
+      displayName: "Publish Artifact"
 
 
-# --------------------------
-# DEPLOYMENT STAGE
-# --------------------------
+# ============================================
+# DEPLOY STAGE
+# ============================================
 - stage: Deploy
-  displayName: 'Deploy to Azure App Service'
+  displayName: "Deploy to Azure App Service"
   dependsOn: Build
   jobs:
   - deployment: DeployJob
-    displayName: 'Deploy Web App'
-    environment: 'dev'
+    displayName: "Deploy Web App"
+    environment: "dev"
+
     pool:
-      name: SelfHostedPool
+      vmImage: 'ubuntu-latest'
 
     strategy:
       runOnce:
         deploy:
           steps:
 
+          # Download artifact from Build stage
           - download: current
             artifact: drop
 
-          # ---- DEPLOY TO AZURE ----
-          - task: AzureWebApp@1
-            displayName: "Deploy to vercel-migration-app"
+          # Deploy to Azure App Service
+          - task: AzureWebApp@1 
             inputs:
-              azureSubscription: 'Opeyemi'
+              azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
               appName: 'vercel-migration-app'
               package: '$(Pipeline.Workspace)/drop/app.zip'
+              runtimeStack: 'NODE|20-lts'
+            displayName: "Deploy to App Service"
+
+          # Inject DATABASE_URL as app setting from variable group
+          - task: AzureAppServiceSettings@1
+            displayName: "Inject DATABASE_URL"
+            inputs:
+              azureSubscription: 'vercel-opeyemi'
+              appName: 'vercel-migration-app'
               appSettings: |
                 [
-                  {
-                    "name": "DATABASE_URL",
-                    "value": "$(DATABASE_URL)"
-                  },
-                  {
-                    "name": "WEBSITES_PORT",
-                    "value": "3000"
-                  }
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
                 ]

@@ -1,48 +1,66 @@
 trigger:
 - main
 
-# Use Microsoft-hosted agent (recommended)
+# ============================================
+# Use Microsoft-hosted agent
+# ============================================
 pool:
   vmImage: 'ubuntu-latest'
-
-stages:
+ 
 # ============================================
 # BUILD STAGE
 # ============================================
+stages:
 - stage: Build
   displayName: "Build and Package App"
   jobs:
   - job: BuildJob
-    displayName: "Install, Build, Test"
+    displayName: "Install, Build, and Package"
     pool:
-      vmImage: 'ubuntu-latest'
-
+      vmImage: 'ubuntu-latest' 
     steps: 
+    # Install Node.js 20
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
       displayName: "Install Node.js 20"
 
-    - script: | 
-        npm install
-        npm run build
-      displayName: "Build Application"
+    # Install dependencies
+    - script: npm install
+      displayName: "Install dependencies"
 
-    - task: ArchiveFiles@2 
+    # Build Next.js app
+    - script: npm run build
+      displayName: "Build Next.js app"
+
+    # Copy production files to artifact folder
+    - task: CopyFiles@2
       inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        contents: |
+          .next/** 
+          public/** 
+          node_modules/** 
+          package.json 
+          next.config.js
+        targetFolder: $(Build.ArtifactStagingDirectory)
+      displayName: "Prepare build artifacts"
+
+    # Archive artifact folder to zip
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
         includeRootFolder: false
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
         replaceExistingArchive: true
-      displayName: "Zip Build Output"
+      displayName: "Zip build output"
 
+    # Publish artifact for deployment
     - task: PublishBuildArtifacts@1
       inputs:
-        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        pathToPublish: '$(Build.ArtifactStagingDirectory)/app.zip'
         artifactName: 'drop'
-      displayName: "Publish Artifact"
-
+      displayName: "Publish build artifact"
 
 # ============================================
 # DEPLOY STAGE
@@ -53,38 +71,31 @@ stages:
   jobs:
   - deployment: DeployJob
     displayName: "Deploy Web App"
-    environment: "dev"
-
+    environment: "dev" 
     pool:
-      vmImage: 'ubuntu-latest'
-
+      vmImage: 'ubuntu-latest' 
     strategy:
       runOnce:
         deploy:
-          steps:
-
+          steps: 
           # Download artifact from Build stage
           - download: current
             artifact: drop
 
-          # Deploy to Azure App Service
+          # Deploy zip artifact to Azure App Service
           - task: AzureWebApp@1 
             inputs:
-              azureSubscription: 'vercel-opeyemi'
+              azureSubscription: 'vercel-opeyemi'   # Your service connection
               appType: 'webAppLinux'
               appName: 'vercel-migration-app'
               package: '$(Pipeline.Workspace)/drop/app.zip'
               runtimeStack: 'NODE|20-lts'
-            displayName: "Deploy to App Service"
+            displayName: "Deploy to Azure App Service"
 
-          # Inject DATABASE_URL as app setting from variable group
+          # Inject DATABASE_URL as app setting
           - task: AzureAppServiceSettings@1
             displayName: "Inject DATABASE_URL"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appName: 'vercel-migration-app'
-              appSettings: |
-                [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
-                ]
-
+              appSettings: '{"DATABASE_URL":"$(DATABASE_URL)"}'

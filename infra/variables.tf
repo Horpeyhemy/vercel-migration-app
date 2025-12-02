@@ -7,7 +7,7 @@ variable "resource_group_name" {
 
 # Location for resources
 variable "location" {
-  description = "Azure location for all resources"
+  description = "Azure location for all my resources"
   type        = string
   default     = "Canada Central"
 }

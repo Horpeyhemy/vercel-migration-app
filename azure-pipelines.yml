@@ -1,30 +1,31 @@
 trigger:
 - main
- 
+
 pool:
   vmImage: 'ubuntu-latest'
 
 stages:
 
 # ============================================
-# BUILD STAGE
-# ============================================ 
+# BUILD STAGE — package source code only
+# ============================================
 - stage: Build
   displayName: "Build Stage"
   jobs:
   - job: BuildJob
-    displayName: "Prepare App Artifact"
-    steps: 
-    - task: NodeTool@0 
+    displayName: "Prepare Deployment Artifact"
+    steps:
+
+    - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
       displayName: "Install Node.js 20"
 
-    # Optional: run lint if you want
-    - script: npm install
-      displayName: "Install dependencies"
+    - script: |
+        npm install
+      displayName: "Install dependencies (for lint/check only)"
 
-    # Zip full project (source code)
+    # Zip ONLY the app source code — no .next, no node_modules
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
@@ -32,38 +33,52 @@ stages:
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/app-source.zip'
         replaceExistingArchive: true
-      displayName: "Zip full project"
+        # Exclude build + system folders
+        # Azure Oryx will rebuild on the server
+        verbose: true
+      displayName: "Create deployment zip"
 
-    - task: PublishBuildArtifacts@1 
+    - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
       displayName: "Publish Artifact"
 
+
 # ============================================
-# DEPLOY STAGE
+# DEPLOY STAGE — Azure builds and runs the app
 # ============================================
 - stage: Deploy
   displayName: "Deploy to Azure App Service"
   dependsOn: Build
   jobs:
   - deployment: DeployJob
-    displayName: "Deploy Web App"
+    displayName: "Deploy Next.js App"
     environment: "dev"
-
-    pool:
-      vmImage: 'ubuntu-latest'
-
+ 
     strategy:
       runOnce:
         deploy:
           steps:
 
-          # Download artifact
+          # Download built artifact
           - download: current
             artifact: drop
+            displayName: "Download Build Artifact"
 
-          # Deploy source zip to App Service
+          # Set App Settings first
+          - task: AzureAppServiceSettings@1
+            displayName: "Configure App Settings"
+            inputs:
+              azureSubscription: 'vercel-opeyemi'
+              appName: 'vercel-migration-app'
+              appSettings: |
+                [
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
+                  { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0", "slotSetting": false }
+                ]
+
+          # Deploy source zip → Azure Oryx will build automatically
           - task: AzureWebApp@1
             inputs:
               azureSubscription: 'vercel-opeyemi'
@@ -71,22 +86,5 @@ stages:
               appName: 'vercel-migration-app'
               package: '$(Pipeline.Workspace)/drop/app-source.zip'
               runtimeStack: 'NODE|20-lts'
-            displayName: "Deploy Source to App Service"
-
-          # Install production dependencies on the server
-          - script: |
-              cd /home/site/wwwroot
-              npm install --production
-              npm run build
-            displayName: "Install dependencies and build app on App Service"
-
-          # Set DATABASE_URL as app setting
-          - task: AzureAppServiceSettings@1
-            displayName: "Inject DATABASE_URL"
-            inputs:
-              azureSubscription: 'vercel-opeyemi'
-              appName: 'vercel-migration-app'
-              appSettings: |
-                [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
-                ]
+            displayName: "Deploy Next.js Source to App Service"
+ 

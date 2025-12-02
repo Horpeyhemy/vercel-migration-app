@@ -1,66 +1,44 @@
 trigger:
 - main
-
-# ============================================
-# Use Microsoft-hosted agent
-# ============================================
+ 
 pool:
   vmImage: 'ubuntu-latest'
- 
+
+stages:
+
 # ============================================
 # BUILD STAGE
-# ============================================
-stages:
+# ============================================ 
 - stage: Build
-  displayName: "Build and Package App"
+  displayName: "Build Stage"
   jobs:
   - job: BuildJob
-    displayName: "Install, Build, and Package"
-    pool:
-      vmImage: 'ubuntu-latest' 
+    displayName: "Prepare App Artifact"
     steps: 
-    # Install Node.js 20
-    - task: NodeTool@0
+    - task: NodeTool@0 
       inputs:
         versionSpec: '20.x'
       displayName: "Install Node.js 20"
 
-    # Install dependencies
+    # Optional: run lint if you want
     - script: npm install
       displayName: "Install dependencies"
 
-    # Build Next.js app
-    - script: npm run build
-      displayName: "Build Next.js app"
-
-    # Copy production files to artifact folder
-    - task: CopyFiles@2
-      inputs:
-        contents: |
-          .next/** 
-          public/** 
-          node_modules/** 
-          package.json 
-          next.config.js
-        targetFolder: $(Build.ArtifactStagingDirectory)
-      displayName: "Prepare build artifacts"
-
-    # Archive artifact folder to zip
+    # Zip full project (source code)
     - task: ArchiveFiles@2
       inputs:
-        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
         includeRootFolder: false
         archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app-source.zip'
         replaceExistingArchive: true
-      displayName: "Zip build output"
+      displayName: "Zip full project"
 
-    # Publish artifact for deployment
-    - task: PublishBuildArtifacts@1
+    - task: PublishBuildArtifacts@1 
       inputs:
-        pathToPublish: '$(Build.ArtifactStagingDirectory)/app.zip'
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
-      displayName: "Publish build artifact"
+      displayName: "Publish Artifact"
 
 # ============================================
 # DEPLOY STAGE
@@ -71,31 +49,44 @@ stages:
   jobs:
   - deployment: DeployJob
     displayName: "Deploy Web App"
-    environment: "dev" 
+    environment: "dev"
+
     pool:
-      vmImage: 'ubuntu-latest' 
+      vmImage: 'ubuntu-latest'
+
     strategy:
       runOnce:
         deploy:
-          steps: 
-          # Download artifact from Build stage
+          steps:
+
+          # Download artifact
           - download: current
             artifact: drop
 
-          # Deploy zip artifact to Azure App Service
-          - task: AzureWebApp@1 
+          # Deploy source zip to App Service
+          - task: AzureWebApp@1
             inputs:
-              azureSubscription: 'vercel-opeyemi'   # Your service connection
+              azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
               appName: 'vercel-migration-app'
-              package: '$(Pipeline.Workspace)/drop/app.zip'
+              package: '$(Pipeline.Workspace)/drop/app-source.zip'
               runtimeStack: 'NODE|20-lts'
-            displayName: "Deploy to Azure App Service"
+            displayName: "Deploy Source to App Service"
 
-          # Inject DATABASE_URL as app setting
+          # Install production dependencies on the server
+          - script: |
+              cd /home/site/wwwroot
+              npm install --production
+              npm run build
+            displayName: "Install dependencies and build app on App Service"
+
+          # Set DATABASE_URL as app setting
           - task: AzureAppServiceSettings@1
             displayName: "Inject DATABASE_URL"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appName: 'vercel-migration-app'
-              appSettings: '{"DATABASE_URL":"$(DATABASE_URL)"}'
+              appSettings: |
+                [
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
+                ]

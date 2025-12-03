@@ -7,13 +7,13 @@ pool:
 stages:
 
 # ============================================
-# BUILD STAGE — package source code only
+# BUILD STAGE — BUILD Next.js + package .next
 # ============================================
 - stage: Build
   displayName: "Build Stage"
   jobs:
   - job: BuildJob
-    displayName: "Prepare Deployment Artifact"
+    displayName: "Build and Package Next.js App"
     steps:
 
     - task: NodeTool@0
@@ -23,30 +23,31 @@ stages:
 
     - script: |
         npm install
-      displayName: "Install dependencies (for lint/check only)"
+      displayName: "Install dependencies"
 
-    # Zip ONLY the app source code — no .next, no node_modules
+    - script: |
+        npm run build
+      displayName: "Build Next.js (creates .next)"
+
+    # Zip the FULL build: .next + public + package.json + node_modules
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
         includeRootFolder: false
         archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/app-source.zip'
-        replaceExistingArchive: true
-        # Exclude build + system folders
-        # Azure Oryx will rebuild on the server
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+        replaceExistingArchive: true 
         verbose: true
-      displayName: "Create deployment zip"
+      displayName: "Create Deployment ZIP (with .next)"
 
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
       displayName: "Publish Artifact"
-
-
+ 
 # ============================================
-# DEPLOY STAGE — Azure builds and runs the app
+# DEPLOY STAGE — Deploy the built Next.js app
 # ============================================
 - stage: Deploy
   displayName: "Deploy to Azure App Service"
@@ -55,36 +56,31 @@ stages:
   - deployment: DeployJob
     displayName: "Deploy Next.js App"
     environment: "dev"
- 
+
     strategy:
       runOnce:
         deploy:
           steps:
-
-          # Download built artifact
+ 
           - download: current
             artifact: drop
             displayName: "Download Build Artifact"
 
-          # Set App Settings first
-          - task: AzureAppServiceSettings@1
+          - task: AzureAppServiceSettings@1 
             displayName: "Configure App Settings"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appName: 'my-vercel-migration-app'
               appSettings: |
                 [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
-                  { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0", "slotSetting": false }
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
                 ]
 
-          # Deploy source zip → Azure Oryx will build automatically
-          - task: AzureWebApp@1
+          - task: AzureWebApp@1 
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
               appName: 'my-vercel-migration-app'
-              package: '$(Pipeline.Workspace)/drop/app-source.zip'
+              package: '$(Pipeline.Workspace)/drop/app.zip'
               runtimeStack: 'NODE|20-lts'
-            displayName: "Deploy Next.js Source to App Service"
- 
+            displayName: "Deploy Next.js Build to App Service"

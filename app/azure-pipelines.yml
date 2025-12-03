@@ -71,7 +71,7 @@ stages:
             displayName: "Configure App Settings"
             inputs:
               azureSubscription: 'vercel-opeyemi'
-              appName: 'vercel-migration-app'
+              appName: 'my-vercel-migration-app'
               appSettings: |
                 [
                   { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
@@ -83,7 +83,7 @@ stages:
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
-              appName: 'vercel-migration-app'
+              appName: 'my-vercel-migration-app'
               package: '$(Pipeline.Workspace)/drop/app-source.zip'
               runtimeStack: 'NODE|20-lts'
             displayName: "Deploy Next.js Source to App Service"

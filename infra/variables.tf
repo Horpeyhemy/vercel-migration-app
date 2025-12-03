@@ -23,7 +23,7 @@ variable "app_service_plan_name" {
 variable "web_app_name" {
   description = "Name of the Azure Web App"
   type        = string
-  default     = "vercel-migration-app"
+  default     = "my-vercel-migration-app"
 }
 
 # Virtual Network and Subnet

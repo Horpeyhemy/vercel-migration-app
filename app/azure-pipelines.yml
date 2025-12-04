@@ -7,7 +7,7 @@ pool:
 stages:
 
 # ============================================
-# BUILD STAGE — BUILD Next.js + package .next
+# BUILD STAGE — Build Next.js (standalone)
 # ============================================
 - stage: Build
   displayName: "Build Stage"
@@ -27,27 +27,35 @@ stages:
 
     - script: |
         npm run build
-      displayName: "Build Next.js (creates .next)"
+      displayName: "Build Next.js (with standalone output)"
 
-    # Zip the FULL build: .next + public + package.json + node_modules
+    # Prepare ZIP folder structure
+    - script: |
+        mkdir build_output
+        cp -r .next/standalone/* build_output/
+        cp -r .next/static build_output/.next/static
+        cp -r public build_output/public
+        cp package.json build_output/
+      displayName: "Assemble Final Deployment Folder"
+
+    # Zip build_output
     - task: ArchiveFiles@2
       inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)/build_output'
         includeRootFolder: false
         archiveType: 'zip'
         archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-        replaceExistingArchive: true 
-        verbose: true
-      displayName: "Create Deployment ZIP (with .next)"
+        replaceExistingArchive: true
+      displayName: "Create Deployment ZIP"
 
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
       displayName: "Publish Artifact"
- 
+
 # ============================================
-# DEPLOY STAGE — Deploy the built Next.js app
+# DEPLOY STAGE — Deploy to App Service
 # ============================================
 - stage: Deploy
   displayName: "Deploy to Azure App Service"
@@ -61,26 +69,28 @@ stages:
       runOnce:
         deploy:
           steps:
- 
+
           - download: current
             artifact: drop
             displayName: "Download Build Artifact"
 
-          - task: AzureAppServiceSettings@1 
+          # App Settings
+          - task: AzureAppServiceSettings@1
             displayName: "Configure App Settings"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appName: 'my-vercel-migration-app'
               appSettings: |
                 [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)" }
                 ]
 
-          - task: AzureWebApp@1 
+          # Deploy ZIP
+          - task: AzureWebApp@1
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
               appName: 'my-vercel-migration-app'
               package: '$(Pipeline.Workspace)/drop/app.zip'
               runtimeStack: 'NODE|20-lts'
-            displayName: "Deploy Next.js Build to App Service"
+            displayName: "Deploy Next.js Standalone Build"

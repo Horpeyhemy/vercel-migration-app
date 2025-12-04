@@ -1,5 +1,5 @@
 trigger:
-- main
+  - main
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -10,7 +10,7 @@ stages:
 # BUILD STAGE
 # ==========================================================
 - stage: Build
-  displayName: "Build Next.js Standalone Output"
+  displayName: "Build Next.js Standalone"
   jobs:
   - job: BuildJob
     displayName: "Build Next.js App"
@@ -18,47 +18,50 @@ stages:
 
     - checkout: self
 
-    - task: NodeTool@0 
+    - task: NodeTool@0
       displayName: "Install Node 20"
       inputs:
         versionSpec: '20.x'
 
-    - script: | 
-        # Install & Build
+    - script: |
+        echo "=== Installing dependencies ==="
         npm ci
+        echo "=== Building Next.js ==="
         npm run build
-      displayName: "Build Next.js App"
+      displayName: "Install Dependencies & Build"
 
-    - script: |  
+    # Debug: show standalone content
+    - script: |
         echo "=== Show standalone folder ==="
-        ls -R .next/standalone || echo "Standalone folder NOT FOUND"
+        ls -R $(Build.SourcesDirectory)/.next/standalone || echo "Standalone NOT found"
       displayName: "DEBUG: Show Standalone Contents"
 
-    # ⚠️ CLEAN BUILD OUTPUT (REMOVE PREVIOUS WRONG ZIP CONTENT)
+    # Prepare standalone build_output folder
     - script: |
-        rm -rf build_output
-        mkdir -p build_output
+        echo "=== Cleaning build_output ==="
+        rm -rf $(Build.SourcesDirectory)/build_output
+        mkdir -p $(Build.SourcesDirectory)/build_output
 
-        echo "Copying standalone minimal server..."
-        cp -R .next/standalone/* build_output/
+        echo "=== Copying standalone minimal server ==="
+        cp -R $(Build.SourcesDirectory)/.next/standalone/* $(Build.SourcesDirectory)/build_output/
 
-        echo "Copying static assets..."
-        mkdir -p build_output/.next
-        cp -R .next/static build_output/.next/static
+        echo "=== Copying static assets ==="
+        mkdir -p $(Build.SourcesDirectory)/build_output/.next
+        cp -R $(Build.SourcesDirectory)/.next/static $(Build.SourcesDirectory)/build_output/.next/static
 
-        echo "Copying public folder..."
-        cp -R public build_output/public || true
+        echo "=== Copying public folder ==="
+        cp -R $(Build.SourcesDirectory)/public $(Build.SourcesDirectory)/build_output/public || true
 
         echo "=== FINAL BUILD OUTPUT STRUCTURE ==="
-        ls -R build_output
-      displayName: "Prepare Correct Standalone Build Output"
- 
+        ls -R $(Build.SourcesDirectory)/build_output
+      displayName: "Prepare Standalone Build Output"
+
     - task: ArchiveFiles@2
       displayName: "Zip Standalone Build"
       inputs:
         rootFolderOrFile: "$(Build.SourcesDirectory)/build_output"
         includeRootFolder: false
-        archiveType: zip
+        archiveType: "zip"
         archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
 
     - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
@@ -70,6 +73,7 @@ stages:
 # ==========================================================
 - stage: Deploy
   dependsOn: Build
+  displayName: "Deploy to Azure Web App"
   jobs:
   - deployment: DeployWebApp
     environment: "dev"
@@ -77,12 +81,13 @@ stages:
       runOnce:
         deploy:
           steps:
+
           - download: current
             artifact: drop
 
-          - task: AzureWebApp@1
-            displayName: "Deploy to Azure App Service"
+          - task: AzureWebApp@1 
             inputs:
               azureSubscription: "vercel-opeyemi"
               appName: "my-vercel-migration-app"
               package: "$(Pipeline.Workspace)/drop/app.zip"
+            displayName: "Deploy Standalone App to Azure"

@@ -18,48 +18,41 @@ stages:
 
     - checkout: self
 
-    # Debug: Show branch and files checked out
-    - script: |
-        echo "=== Current Branch and Directory ==="
-        git branch
-        ls -R
-      displayName: "DEBUG: Validate Checkout"
-
-    # Debug: Show Next.js config file content
-    - script: |
-        echo "=== next.config.js / next.config.ts contents ==="
-        if [ -f next.config.js ]; then cat next.config.js; fi
-        if [ -f next.config.ts ]; then cat next.config.ts; fi
-      displayName: "DEBUG: Show Next Config"
-
-    # Install Node
-    - task: NodeTool@0
+    - task: NodeTool@0 
       displayName: "Install Node 20"
       inputs:
         versionSpec: '20.x'
 
-    # Install dependencies & build
-    - script: |
+    - script: | 
+        # Install & Build
         npm ci
         npm run build
       displayName: "Build Next.js App"
 
-    # DEBUG: Check if standalone folder was generated
-    - script: |
-        echo "=== Checking Next.js Build Output ==="
-        ls -R .next || echo ".next folder missing"
-        ls -R .next/standalone || echo ".next/standalone folder missing"
-      displayName: "DEBUG: Check Standalone Build Output"
+    - script: |  
+        echo "=== Show standalone folder ==="
+        ls -R .next/standalone || echo "Standalone folder NOT FOUND"
+      displayName: "DEBUG: Show Standalone Contents"
 
-    # Prepare standalone folder for deployment
+    # ⚠️ CLEAN BUILD OUTPUT (REMOVE PREVIOUS WRONG ZIP CONTENT)
     - script: |
+        rm -rf build_output
         mkdir -p build_output
-        cp -R .next/standalone/* build_output/
-        cp -R .next/static build_output/.next/static
-        cp -R public build_output/public
-      displayName: "Prepare Deployable Standalone Output"
 
-    # Zip artifact
+        echo "Copying standalone minimal server..."
+        cp -R .next/standalone/* build_output/
+
+        echo "Copying static assets..."
+        mkdir -p build_output/.next
+        cp -R .next/static build_output/.next/static
+
+        echo "Copying public folder..."
+        cp -R public build_output/public || true
+
+        echo "=== FINAL BUILD OUTPUT STRUCTURE ==="
+        ls -R build_output
+      displayName: "Prepare Correct Standalone Build Output"
+ 
     - task: ArchiveFiles@2
       displayName: "Zip Standalone Build"
       inputs:

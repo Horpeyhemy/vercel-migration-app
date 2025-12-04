@@ -27,18 +27,34 @@ stages:
 
     - script: |
         npm run build
-      displayName: "Build Next.js (with standalone output)"
+      displayName: "Build Next.js (standalone output)"
 
-    # Prepare ZIP folder structure
+
+    # ============================================
+    # PACKAGE THE BUILD FOR AZURE APP SERVICE
+    # ============================================
     - script: |
-        mkdir build_output
+        echo "Preparing build_output folder..."
+        mkdir -p build_output
+        mkdir -p build_output/.next
+        mkdir -p build_output/public
+
+        echo "Copying standalone server files..."
         cp -r .next/standalone/* build_output/
-        cp -r .next/static build_output/.next/static
-        cp -r public build_output/public
+
+        echo "Copying static assets..."
+        cp -r .next/static build_output/.next/
+
+        echo "Copying public directory..."
+        cp -r public/* build_output/public/ 2>/dev/null || true
+
+        echo "Copying package.json..."
         cp package.json build_output/
+
+        echo "Build output prepared."
       displayName: "Assemble Final Deployment Folder"
 
-    # Zip build_output
+
     - task: ArchiveFiles@2
       inputs:
         rootFolderOrFile: '$(System.DefaultWorkingDirectory)/build_output'
@@ -48,14 +64,16 @@ stages:
         replaceExistingArchive: true
       displayName: "Create Deployment ZIP"
 
+
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
       displayName: "Publish Artifact"
 
+
 # ============================================
-# DEPLOY STAGE — Deploy to App Service
+# DEPLOY STAGE — Deploy to Azure App Service
 # ============================================
 - stage: Deploy
   displayName: "Deploy to Azure App Service"
@@ -73,8 +91,7 @@ stages:
           - download: current
             artifact: drop
             displayName: "Download Build Artifact"
-
-          # App Settings
+ 
           - task: AzureAppServiceSettings@1
             displayName: "Configure App Settings"
             inputs:
@@ -85,7 +102,7 @@ stages:
                   { "name": "DATABASE_URL", "value": "$(DATABASE_URL)" }
                 ]
 
-          # Deploy ZIP
+
           - task: AzureWebApp@1
             inputs:
               azureSubscription: 'vercel-opeyemi'

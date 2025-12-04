@@ -5,110 +5,65 @@ pool:
   vmImage: 'ubuntu-latest'
 
 stages:
-
-# ============================================
-# BUILD STAGE — Build Next.js Standalone Output
-# ============================================
+# ============================
+# BUILD STAGE
+# ============================
 - stage: Build
-  displayName: "Build Stage"
+  displayName: Build Next.js Standalone
   jobs:
-    - job: BuildJob
-      displayName: "Build and Package Next.js Standalone App"
+  - job: BuildJob
+    steps:
+    - checkout: self
 
-      steps:
-        - task: NodeTool@0
-          inputs:
-            versionSpec: '20.x'
-          displayName: "Install Node.js 20"
+    - task: NodeTool@0
+      displayName: "Install Node 20"
+      inputs:
+        versionSpec: '20.x'
 
-        - script: |
-            npm install
-          displayName: "Install dependencies"
+    - script: |
+        npm install
+        npm run build
+      displayName: "Install deps & build Next.js"
 
-        - script: |
-            npm run build
-          displayName: "Build Next.js (Standalone)"
+    # Copy standalone output to artifact folder
+    - script: |
+        mkdir -p build_output
+        cp -R .next/standalone/* build_output/
+        cp -R .next/static build_output/.next/static
+        cp -R public build_output/public
+      displayName: "Prepare standalone build output"
 
-        # ------------------------------------------------------
-        # Assemble final production folder for Azure App Service
-        # ------------------------------------------------------
-        - script: |
-            echo "Assembling build_output folder..."
+    # Zip standalone output
+    - task: ArchiveFiles@2
+      displayName: "Create deployment ZIP"
+      inputs:
+        rootFolderOrFile: "$(Build.SourcesDirectory)/build_output"
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
 
-            rm -rf build_output
-            mkdir -p build_output
-            mkdir -p build_output/.next
-            mkdir -p build_output/public
+    - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
+      displayName: "Publish artifact"
+      artifact: drop
 
-            # Copy standalone server (this contains server.js and bundled node_modules)
-            cp -R .next/standalone/* build_output/
-
-            # Copy Next.js static assets
-            cp -R .next/static build_output/.next/
-
-            # Copy public folder
-            cp -R public/* build_output/public/ 2>/dev/null || true
-
-            # Copy package.json (required for Azure Node detection)
-            cp package.json build_output/
-
-            echo "Final build_output contents:"
-            ls -R build_output
-          displayName: "Assemble Standalone Deployment Folder"
-
-        # Zip ONLY build_output (not whole repo)
-        - task: ArchiveFiles@2
-          inputs:
-            rootFolderOrFile: '$(Build.SourcesDirectory)/build_output'
-            includeRootFolder: false
-            archiveType: 'zip'
-            archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-            replaceExistingArchive: true
-          displayName: "Create Deployment ZIP"
-
-        - task: PublishBuildArtifacts@1
-          inputs:
-            pathToPublish: '$(Build.ArtifactStagingDirectory)'
-            artifactName: 'drop'
-          displayName: "Publish Artifact"
- 
-# ============================================
-# DEPLOY STAGE — Upload ZIP to Azure App Service
-# ============================================
-- stage: Deploy
-  displayName: "Deploy to Azure App Service"
-  dependsOn: Build
-
+# ============================
+# DEPLOY STAGE
+# ============================
+- stage: Deploy 
+  dependsOn: Build 
   jobs:
-    - deployment: DeployJob
-      displayName: "Deploy Next.js Standalone Build"
-      environment: "dev"
+  - deployment: DeployWebApp
+    environment: "production"
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
 
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - download: current
-                artifact: drop
-                displayName: "Download Build Artifact"
-
-              # Ensure APP SETTINGS get updated
-              - task: AzureAppServiceSettings@1
-                inputs:
-                  azureSubscription: 'vercel-opeyemi'
-                  appName: 'my-vercel-migration-app'
-                  appSettings: |
-                    [
-                      { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
-                      { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false", "slotSetting": false }
-                    ]
-                displayName: "Configure App Settings"
-
-              - task: AzureWebApp@1
-                inputs:
-                  azureSubscription: 'vercel-opeyemi'
-                  appType: 'webAppLinux'
-                  appName: 'my-vercel-migration-app'
-                  package: '$(Pipeline.Workspace)/drop/app.zip'
-                  runtimeStack: 'NODE|20-lts'
-                displayName: "Deploy Next.js Standalone Build"
+          - task: AzureWebApp@1
+            displayName: "Deploy to Azure App Service"
+            inputs:
+              azureSubscription: "Your-Service-Connection"
+              appName: "my-vercel-migration-app"
+              package: "$(Pipeline.Workspace)/drop/app.zip"

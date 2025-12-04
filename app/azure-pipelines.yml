@@ -5,13 +5,15 @@ pool:
   vmImage: 'ubuntu-latest'
 
 stages:
+
 # ============================
 # BUILD STAGE
 # ============================
 - stage: Build
-  displayName: Build Next.js Standalone
+  displayName: "Build Next.js Standalone"
   jobs:
   - job: BuildJob
+    displayName: "Build Next.js"
     steps:
     - checkout: self
 
@@ -21,19 +23,28 @@ stages:
         versionSpec: '20.x'
 
     - script: |
-        npm install
+        npm ci
         npm run build
       displayName: "Install deps & build Next.js"
-
-    # Copy standalone output to artifact folder
+ 
     - script: |
+        echo "Preparing standalone build output..."
+        rm -rf build_output
         mkdir -p build_output
-        cp -R .next/standalone/* build_output/
-        cp -R .next/static build_output/.next/static
-        cp -R public build_output/public
-      displayName: "Prepare standalone build output"
 
-    # Zip standalone output
+        # Copy standalone folder
+        cp -R .next/standalone/* build_output/
+
+        # Copy static assets
+        mkdir -p build_output/.next
+        cp -R .next/static build_output/.next/static
+
+        # Copy public folder if exists
+        if [ -d "public" ]; then
+          cp -R public build_output/public
+        fi
+      displayName: "Prepare standalone output"
+ 
     - task: ArchiveFiles@2
       displayName: "Create deployment ZIP"
       inputs:
@@ -43,17 +54,19 @@ stages:
         archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
 
     - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
-      displayName: "Publish artifact"
+      displayName: "Publish Artifact"
       artifact: drop
+
 
 # ============================
 # DEPLOY STAGE
 # ============================
 - stage: Deploy 
+  displayName: "Deploy to Azure (dev)"
   dependsOn: Build 
   jobs:
   - deployment: DeployWebApp
-    environment: "production"
+    environment: "dev"
     strategy:
       runOnce:
         deploy:
@@ -62,8 +75,8 @@ stages:
             artifact: drop
 
           - task: AzureWebApp@1
-            displayName: "Deploy to Azure App Service"
+            displayName: "Deploy Next.js Standalone to Azure"
             inputs:
-              azureSubscription: "Your-Service-Connection"
+              azureSubscription: "vercel-opeyemi"
               appName: "my-vercel-migration-app"
               package: "$(Pipeline.Workspace)/drop/app.zip"

@@ -31,7 +31,7 @@ resource "azurerm_service_plan" "plan" {
 
 # Linux Web App
 resource "azurerm_linux_web_app" "app" {
-  name                = "my-vercel-migration-app"
+  name                = "ope-vercel-migration-app"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   service_plan_id     = azurerm_service_plan.plan.id 
@@ -39,11 +39,7 @@ resource "azurerm_linux_web_app" "app" {
   site_config { 
     always_on = false
   }
- 
-  app_settings = {
-    # DATABASE_URL will be injected from Azure DevOps variable group
-    "WEBSITES_PORT" = "3000"
-  }
+  
 }
 
 

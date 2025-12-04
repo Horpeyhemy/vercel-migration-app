@@ -5,56 +5,63 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-- group: vercel-migration-secrets   # ✅ Your variable group
+- group: vercel-migration-secrets   # contains DATABASE_URL
 
 stages:
 
 # ============================================
-# BUILD STAGE — builds Next.js properly
+# BUILD STAGE — package ONLY source code
 # ============================================
 - stage: Build
-  displayName: "Build Next.js App"
+  displayName: "Build Stage"
   jobs:
   - job: BuildJob
-    displayName: "Build and Package"
+    displayName: "Prepare Clean Deployment Artifact"
+
     steps:
 
-    - task: NodeTool@0 
+    - task: NodeTool@0
       inputs:
-        versionSpec: '20.x'
+        versionSpec: "20.x"
       displayName: "Install Node.js 20"
 
-    - script: | 
-        npm ci 
-        npm run build
-      displayName: "Install deps & build Next.js"
+    - script: |
+        npm install
+      displayName: "Install dependencies for validation"
 
-    # Zip EVERYTHING including .next
-    - task: ArchiveFiles@2 
+    # Clean unwanted folders from ZIP
+    - script: |
+        rm -rf .next
+        rm -rf node_modules
+        rm -rf vercel-migration-app.git
+      displayName: "Clean build artifacts before zipping"
+
+    - task: ArchiveFiles@2
+      displayName: "Create deployment ZIP (source only)"
       inputs:
         rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
         includeRootFolder: false
         archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-        replaceExistingArchive: true
-      displayName: "Package App for Deployment"
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app-source.zip'
+        replaceExistingArchive: true 
 
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
-      displayName: "Publish Artifact"
+      displayName: "Publish ZIP Artifact"
 
 
 # ============================================
-# DEPLOY STAGE — deploys to Azure App Service
+# DEPLOY STAGE — Azure builds Next.js via Oryx
 # ============================================
 - stage: Deploy
   displayName: "Deploy to Azure App Service"
-  dependsOn: Build 
+  dependsOn: Build
+
   jobs:
   - deployment: DeployJob
-    displayName: "Deploy App"
+    displayName: "Deploy Next.js App"
     environment: "dev"
 
     strategy:
@@ -65,24 +72,23 @@ stages:
           - download: current
             artifact: drop
             displayName: "Download Build Artifact"
-
-          # Inject settings from your variable group
+ 
           - task: AzureAppServiceSettings@1
-            displayName: "Configure App Service Settings"
+            displayName: "Apply App Settings"
             inputs:
               azureSubscription: 'vercel-opeyemi'
-              appName: 'my-vercel-migration-app'
+              appName: 'ope-vercel-migration-app'
               appSettings: |
                 [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false }
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
+                  { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0", "slotSetting": false }
                 ]
 
-          # Deploy app.zip to Azure
-          - task: AzureWebApp@1
-            displayName: "Deploy Next.js App"
+          - task: AzureWebApp@1 
+            displayName: "Deploy Source ZIP to Azure App Service"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
-              appName: 'my-vercel-migration-app'
-              package: '$(Pipeline.Workspace)/drop/app.zip'
+              appName: 'ope-vercel-migration-app'
+              package: '$(Pipeline.Workspace)/drop/app-source.zip'
               runtimeStack: 'NODE|20-lts'

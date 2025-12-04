@@ -9,61 +9,69 @@ stages:
 # ============================
 # BUILD STAGE
 # ============================
-- stage: Build
-  displayName: "Build Next.js Standalone"
+- stage: Build 
   jobs:
-  - job: BuildJob
-    displayName: "Build Next.js"
+  - job: BuildJob 
     steps:
     - checkout: self
 
-    - task: NodeTool@0
-      displayName: "Install Node 20"
+    - task: NodeTool@0 
       inputs:
         versionSpec: '20.x'
 
     - script: |
+        echo "Installing dependencies..."
         npm ci
+
+        echo "Building Next.js standalone..."
         npm run build
-      displayName: "Install deps & build Next.js"
- 
+
+        echo "Checking standalone output..."
+        ls -R .next/standalone || echo "❌ Standalone folder missing"
+
+      displayName: "Install & Build"
+
     - script: |
-        echo "Preparing standalone build output..."
+        echo "Preparing build_output..."
+
         rm -rf build_output
         mkdir -p build_output
 
-        # Copy standalone folder
+        # Copy standalone server
         cp -R .next/standalone/* build_output/
 
         # Copy static assets
         mkdir -p build_output/.next
         cp -R .next/static build_output/.next/static
 
-        # Copy public folder if exists
+        # Copy public files
         if [ -d "public" ]; then
           cp -R public build_output/public
         fi
-      displayName: "Prepare standalone output"
- 
-    - task: ArchiveFiles@2
-      displayName: "Create deployment ZIP"
+
+        echo "Contents of build_output:"
+        ls -R build_output
+      displayName: "Prepare Output"
+
+    - task: ArchiveFiles@2 
       inputs:
-        rootFolderOrFile: "$(Build.SourcesDirectory)/build_output"
+        rootFolderOrFile: "build_output"
         includeRootFolder: false
         archiveType: zip
         archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
+        replaceExistingArchive: true
+      displayName: "Zip Standalone Build"
 
     - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
-      displayName: "Publish Artifact"
       artifact: drop
-
+      displayName: "Publish Artifact"
+ 
 
 # ============================
 # DEPLOY STAGE
 # ============================
-- stage: Deploy 
-  displayName: "Deploy to Azure (dev)"
-  dependsOn: Build 
+- stage: Deploy
+  dependsOn: Build
   jobs:
   - deployment: DeployWebApp
     environment: "dev"
@@ -74,9 +82,9 @@ stages:
           - download: current
             artifact: drop
 
-          - task: AzureWebApp@1
-            displayName: "Deploy Next.js Standalone to Azure"
+          - task: AzureWebApp@1 
             inputs:
               azureSubscription: "vercel-opeyemi"
               appName: "my-vercel-migration-app"
               package: "$(Pipeline.Workspace)/drop/app.zip"
+            displayName: "Deploy App"

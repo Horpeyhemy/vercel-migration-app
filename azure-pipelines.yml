@@ -7,85 +7,113 @@ pool:
 variables:
 - group: 'vercel-migration-secrets'
 
-stages: 
+stages:
 # ============================================
-# BUILD STAGE — create clean source zip
+# BUILD STAGE — produces .next/standalone
 # ============================================
 - stage: Build
   displayName: "Build Stage"
+
   jobs:
   - job: BuildJob
-    displayName: "Prepare Deployment Artifact"
-    steps: 
+    displayName: "Build Next.js Standalone App"
+
+    steps:
     - task: NodeTool@0
       inputs:
         versionSpec: '20.x'
       displayName: "Install Node.js 20"
-
-    # Optional sanity check: install deps (you can keep or remove)
+ 
     - script: |
-        npm install
-      displayName: "Install dependencies (local check)"
+        npm ci
+        npm run build
+      displayName: "Install dependencies & Build Next.js"
 
-    # Remove local build & node_modules so they are NOT included in the zip
-    - script: |
-        rm -rf node_modules .next
-      displayName: "Clean node_modules and .next before zipping"
-
-    # Zip the full project source (including startup.sh, package.json, app/, etc)
-    - task: ArchiveFiles@2 
+    # COPY standalone server output → artifact
+    - task: CopyFiles@2
+      displayName: "Copy standalone server output"
       inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        SourceFolder: "$(Build.SourcesDirectory)/.next/standalone"
+        Contents: "**"
+        TargetFolder: "$(Build.ArtifactStagingDirectory)"
+
+    # Copy public assets
+    - task: CopyFiles@2
+      displayName: "Copy static files"
+      inputs:
+        SourceFolder: "$(Build.SourcesDirectory)/.next/static"
+        Contents: "**"
+        TargetFolder: "$(Build.ArtifactStagingDirectory)/.next/static"
+
+    # Copy public folder
+    - task: CopyFiles@2
+      displayName: "Copy public folder"
+      inputs:
+        SourceFolder: "$(Build.SourcesDirectory)/public"
+        Contents: "**"
+        TargetFolder: "$(Build.ArtifactStagingDirectory)/public"
+
+    # Copy startup.sh into artifact root
+    - task: CopyFiles@2
+      displayName: "Copy startup script"
+      inputs:
+        SourceFolder: "$(Build.SourcesDirectory)"
+        Contents: "startup.sh"
+        TargetFolder: "$(Build.ArtifactStagingDirectory)"
+
+    # Zip ONLY the standalone output
+    - task: ArchiveFiles@2
+      displayName: "Zip deployment package"
+      inputs:
+        rootFolderOrFile: "$(Build.ArtifactStagingDirectory)"
         includeRootFolder: false
-        archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/app-source.zip'
-        replaceExistingArchive: true
-        verbose: true
-      displayName: "Create deployment zip (source only)"
+        archiveType: "zip"
+        archiveFile: "$(Build.ArtifactStagingDirectory)/deploy.zip"
+        replaceExistingArchive: true 
 
     - task: PublishBuildArtifacts@1
       inputs:
-        pathToPublish: '$(Build.ArtifactStagingDirectory)'
-        artifactName: 'drop'
+        pathToPublish: "$(Build.ArtifactStagingDirectory)"
+        artifactName: "drop"
       displayName: "Publish Artifact"
 
+
 # ============================================
-# DEPLOY STAGE — Azure runs startup.sh
+# DEPLOY STAGE — send standalone build to Azure
 # ============================================
 - stage: Deploy
-  displayName: "Deploy to Azure App Service"
-  dependsOn: Build 
+  displayName: "Deploy to Azure"
+  dependsOn: Build
+
   jobs:
   - deployment: DeployJob
-    displayName: "Deploy Next.js App"
+    displayName: "Deploy Standalone Build"
     environment: "dev"
 
     strategy:
       runOnce:
         deploy:
-          steps: 
-          - download: current
-            artifact: drop
-            displayName: "Download Build Artifact"
 
-          # App settings: DATABASE_URL from variable group + disable Run-From-Package
+          steps:
+          - download: current
+            artifact: drop 
+ 
           - task: AzureAppServiceSettings@1
             displayName: "Configure App Settings"
             inputs:
               azureSubscription: 'vercel-opeyemi'
-              appName: 'ope-vercel-migration-app'   # <-- change if your new app name is different
+              appName: 'ope-vercel-migration-app'
               appSettings: |
                 [
-                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)", "slotSetting": false },
-                  { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0", "slotSetting": false }
+                  { "name": "DATABASE_URL", "value": "$(DATABASE_URL)" },
+                  { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" }
                 ]
-
-          # Deploy source zip
+ 
           - task: AzureWebApp@1
-            displayName: "Deploy Next.js Source to App Service"
+            displayName: "Deploy ZIP to Azure App Service"
             inputs:
               azureSubscription: 'vercel-opeyemi'
               appType: 'webAppLinux'
-              appName: 'ope-vercel-migration-app'   # <-- same app name here
-              package: '$(Pipeline.Workspace)/drop/app-source.zip'
-              runtimeStack: 'NODE|20-lts'
+              appName: 'ope-vercel-migration-app'
+              package: "$(Pipeline.Workspace)/drop/deploy.zip"
+              runtimeStack: "NODE|20-lts"

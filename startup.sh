@@ -1,19 +1,13 @@
 #!/bin/bash
 set -e
-
-echo "=== Startup: cd to /home/site/wwwroot ==="
+ 
 cd /home/site/wwwroot
 
 echo "=== Installing production dependencies ==="
-# Prefer clean install if lockfile exists
-if [ -f package-lock.json ]; then
-  npm ci --only=production || npm install --production
-else
-  npm install --production
-fi
+npm ci --omit=dev || npm install --omit=dev
 
-echo "=== Building Next.js app ==="
+echo "=== Building Next.js app (standalone output) ==="
 npm run build
 
-echo "=== Starting Next.js app ==="
-npm start
+echo "=== Starting standalone Next.js server ==="
+node .next/standalone/server.js
